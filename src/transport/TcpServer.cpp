@@ -1,5 +1,6 @@
 #include "TcpServer.hpp"
 #include "broker/ServiceBroker.hpp"
+#include "common/RpcMessage.hpp"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -72,10 +73,18 @@ void TcpServer::start(int port)
             << buffer
             << '\n';
 
+        RpcMessage request =
+            RpcMessage::deserialize(buffer);
+
+        std::cout
+            << "Method: "
+            << request.method
+            << '\n';
+
         ServiceBroker broker;
 
         std::string response =
-            broker.dispatch(buffer);
+            broker.dispatch(request.method);
 
         send(clientFd,
              response.c_str(),
