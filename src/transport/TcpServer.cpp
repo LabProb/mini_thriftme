@@ -50,61 +50,61 @@ void TcpServer::start(int port)
         << port
         << '\n';
 
-    int clientFd =
-        accept(serverFd, nullptr, nullptr);
-
-    if (clientFd < 0)
+     while (true)
     {
-        std::cerr << "Accept failed\n";
+        int clientFd =
+            accept(serverFd, nullptr, nullptr);
 
-        close(serverFd);
+        if (clientFd < 0)
+        {
+            std::cerr
+                << "Accept failed\n";
 
-        return;
+            continue;
+        }
+
+        char buffer[1024]{};
+
+        ssize_t bytes =
+            recv(clientFd,
+                 buffer,
+                 sizeof(buffer),
+                 0);
+
+        if (bytes > 0)
+        {
+            RpcMessage request =
+                RpcMessage::deserialize(buffer);
+
+            std::cout
+                << "Method: "
+                << request.method
+                << '\n';
+
+            ServiceBroker broker;
+
+            std::string result =
+                broker.dispatch(request.method);
+
+            RpcResponse response;
+
+            response.requestId =
+                request.requestId;
+
+            response.success = true;
+
+            response.payload = result;
+
+            std::string serialized =
+                response.serialize();
+
+            send(clientFd,
+                 serialized.c_str(),
+                 serialized.size(),
+                 0);
+        }
+
+        close(clientFd);
     }
-
-    char buffer[1024]{};
-
-    ssize_t bytes =
-        recv(clientFd, buffer, sizeof(buffer), 0);
-
-    if (bytes > 0)
-    {
-        std::cout
-            << "Received request: "
-            << buffer
-            << '\n';
-
-        RpcMessage request =
-            RpcMessage::deserialize(buffer);
-
-        std::cout
-            << "Method: "
-            << request.method
-            << '\n';
-
-        ServiceBroker broker;
-
-        std::string result =
-            broker.dispatch(request.method);
-
-        RpcResponse response;
-
-        response.requestId =
-            request.requestId;
-
-        response.success = true;
-
-        response.payload = result;
-
-        std::string serialized =
-            response.serialize();
-
-        send(clientFd,
-             serialized.c_str(),
-             serialized.size(),
-             0);
-            }
-
-    close(clientFd);
     close(serverFd);
 }
