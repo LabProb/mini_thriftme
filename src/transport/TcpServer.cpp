@@ -1,6 +1,7 @@
 #include "TcpServer.hpp"
 #include "broker/ServiceBroker.hpp"
 #include "common/RpcMessage.hpp"
+#include "common/RpcResponse.hpp"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -83,14 +84,26 @@ void TcpServer::start(int port)
 
         ServiceBroker broker;
 
-        std::string response =
+        std::string result =
             broker.dispatch(request.method);
 
+        RpcResponse response;
+
+        response.requestId =
+            request.requestId;
+
+        response.success = true;
+
+        response.payload = result;
+
+        std::string serialized =
+            response.serialize();
+
         send(clientFd,
-             response.c_str(),
-             response.size(),
+             serialized.c_str(),
+             serialized.size(),
              0);
-    }
+            }
 
     close(clientFd);
     close(serverFd);
