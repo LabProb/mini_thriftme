@@ -1,12 +1,14 @@
 #pragma once
 
-#include "common/RpcMessage.hpp"
 #include "services/VehicleService.hpp"
+
+#include <string>
 
 class ServiceBroker
 {
 public:
-    RpcMessage dispatch(const RpcMessage& request);
+    std::string dispatch(
+        const std::string& request);
 
 private:
     VehicleService m_vehicleService;

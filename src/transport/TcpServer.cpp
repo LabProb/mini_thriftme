@@ -1,4 +1,5 @@
 #include "TcpServer.hpp"
+#include "broker/ServiceBroker.hpp"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -71,11 +72,14 @@ void TcpServer::start(int port)
             << buffer
             << '\n';
 
-        const char* response = "72";
+        ServiceBroker broker;
+
+        std::string response =
+            broker.dispatch(buffer);
 
         send(clientFd,
-             response,
-             std::strlen(response),
+             response.c_str(),
+             response.size(),
              0);
     }
 
