@@ -1,25 +1,30 @@
 #include "ServiceBroker.hpp"
 
-std::string ServiceBroker::dispatch(
-    const std::string& request)
+bool ServiceBroker::dispatch(
+    const std::string& method,
+    std::string& response)
 {
-    if (request == "GetVehicleSpeed")
+    bool result = true;
+    if (method == "GetVehicleSpeed")
     {
-        return std::to_string(
+        response = std::to_string(
             m_vehicleService.GetVehicleSpeed());
     }
 
-    if (request == "GetCpuUsage")
+    else if (method == "GetCpuUsage")
     {
-        return std::to_string(
+        response = std::to_string(
             m_vehicleService.GetCpuUsage());
     }
 
-    if (request == "GetMemoryUsage")
+    else if (method == "GetMemoryUsage")
     {
-        return std::to_string(
+        response = std::to_string(
             m_vehicleService.GetMemoryUsage());
     }
-
-    return "Unknown method";
+    else {
+        response = "ERROR: Unknown method";
+        result = false;
+    }
+    return result;
 }

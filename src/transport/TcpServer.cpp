@@ -83,15 +83,16 @@ void TcpServer::start(int port)
 
             ServiceBroker broker;
 
-            std::string result =
-                broker.dispatch(request.method);
-
             RpcResponse response;
 
             response.requestId =
                 request.requestId;
-
-            response.success = true;
+            
+            std::string result{};
+            response.success = 
+                broker.dispatch(
+                    request.method,
+                    result);
 
             response.payload = result;
 
