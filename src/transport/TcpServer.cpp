@@ -1,21 +1,96 @@
 #include "TcpServer.hpp"
-#include "broker/ServiceBroker.hpp"
 #include "common/RpcMessage.hpp"
 #include "common/RpcResponse.hpp"
+#include "SocketDescriptor.hpp"
 
 #include <arpa/inet.h>
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
+#include <string>
 #include <iostream>
 #include <sys/socket.h>
-#include <unistd.h>
 
-void TcpServer::start(int port)
+namespace
 {
-    int serverFd = socket(AF_INET, SOCK_STREAM, 0);
+constexpr std::size_t maxMessageSize = 64 * 1024;
 
-    if (serverFd < 0)
+bool sendAll(int socket, const std::string& data)
+{
+    std::size_t sent{};
+    while (sent < data.size())
     {
-        std::cerr << "Socket creation failed\n";
+        const auto bytes = send(socket, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
+        if (bytes <= 0)
+        {
+            if (bytes < 0 && errno == EINTR)
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        sent += static_cast<std::size_t>(bytes);
+    }
+
+    return true;
+}
+
+RpcResponse invalidRequestResponse()
+{
+    return {0, false, "ERROR: Invalid request"};
+}
+
+bool receiveRequest(int socket, std::string& request)
+{
+    char buffer[4096];
+
+    while (true)
+    {
+        const auto bytes = recv(socket, buffer, sizeof(buffer), 0);
+        if (bytes == 0)
+        {
+            return !request.empty();
+        }
+
+        if (bytes < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            std::cerr << "Receiving request failed: " << std::strerror(errno) << '\n';
+            return false;
+        }
+
+        if (request.size() + static_cast<std::size_t>(bytes) > maxMessageSize)
+        {
+            std::cerr << "Request exceeds the maximum supported size\n";
+            return false;
+        }
+
+        request.append(buffer, static_cast<std::size_t>(bytes));
+    }
+}
+} // namespace
+
+void TcpServer::start(std::uint16_t port)
+{
+    SocketDescriptor serverSocket(socket(AF_INET, SOCK_STREAM, 0));
+
+    if (!serverSocket)
+    {
+        std::cerr << "Socket creation failed: " << std::strerror(errno) << '\n';
+        return;
+    }
+
+    const int reuseAddress = 1;
+    if (setsockopt(serverSocket.get(), SOL_SOCKET, SO_REUSEADDR, &reuseAddress,
+                   sizeof(reuseAddress)) < 0)
+    {
+        std::cerr << "Setting SO_REUSEADDR failed: " << std::strerror(errno) << '\n';
         return;
     }
 
@@ -25,23 +100,17 @@ void TcpServer::start(int port)
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    if (bind(serverFd,
+    if (bind(serverSocket.get(),
              reinterpret_cast<sockaddr*>(&address),
              sizeof(address)) < 0)
     {
-        std::cerr << "Bind failed\n";
-
-        close(serverFd);
-
+        std::cerr << "Bind failed: " << std::strerror(errno) << '\n';
         return;
     }
 
-    if (listen(serverFd, 5) < 0)
+    if (listen(serverSocket.get(), SOMAXCONN) < 0)
     {
-        std::cerr << "Listen failed\n";
-
-        close(serverFd);
-
+        std::cerr << "Listen failed: " << std::strerror(errno) << '\n';
         return;
     }
 
@@ -50,62 +119,37 @@ void TcpServer::start(int port)
         << port
         << '\n';
 
-     while (true)
+    while (true)
     {
-        int clientFd =
-            accept(serverFd, nullptr, nullptr);
+        SocketDescriptor clientSocket(accept(serverSocket.get(), nullptr, nullptr));
 
-        if (clientFd < 0)
+        if (!clientSocket)
         {
-            std::cerr
-                << "Accept failed\n";
+            if (errno != EINTR)
+            {
+                std::cerr << "Accept failed: " << std::strerror(errno) << '\n';
+            }
 
             continue;
         }
 
-        char buffer[1024]{};
-
-        ssize_t bytes =
-            recv(clientFd,
-                 buffer,
-                 sizeof(buffer),
-                 0);
-
-        if (bytes > 0)
+        std::string rawRequest;
+        if (receiveRequest(clientSocket.get(), rawRequest))
         {
-            RpcMessage request =
-                RpcMessage::deserialize(buffer);
+            const auto request = RpcMessage::deserialize(rawRequest);
 
-            std::cout
-                << "Method: "
-                << request.method
-                << '\n';
+            RpcResponse response = invalidRequestResponse();
+            if (request)
+            {
+                std::cout << "Method: " << request->method << '\n';
+                const auto result = m_broker.dispatch(request->method);
+                response = {request->requestId, result.success, result.payload};
+            }
 
-            ServiceBroker broker;
-
-            RpcResponse response;
-
-            response.requestId =
-                request.requestId;
-            
-            std::string result{};
-            response.success = 
-                broker.dispatch(
-                    request.method,
-                    result);
-
-            response.payload = result;
-
-            std::string serialized =
-                response.serialize();
-
-            send(clientFd,
-                 serialized.c_str(),
-                 serialized.size(),
-                 0);
+            if (!sendAll(clientSocket.get(), response.serialize()))
+            {
+                std::cerr << "Sending response failed: " << std::strerror(errno) << '\n';
+            }
         }
-
-        close(clientFd);
     }
-    close(serverFd);
 }

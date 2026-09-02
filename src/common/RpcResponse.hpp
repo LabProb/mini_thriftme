@@ -1,7 +1,10 @@
 #pragma once
 
-#include <sstream>
+#include "RpcWireFormat.hpp"
+
+#include <optional>
 #include <string>
+#include <string_view>
 
 struct RpcResponse
 {
@@ -11,50 +14,28 @@ struct RpcResponse
 
     std::string payload;
 
-    std::string serialize() const
+    [[nodiscard]] std::string serialize() const
     {
-        std::ostringstream stream;
-
-        stream
-            << requestId
-            << '|'
-            << success
-            << '|'
-            << payload;
-
-        return stream.str();
+        return std::to_string(requestId) + '|' + (success ? "1" : "0") + '|' + payload;
     }
 
-    static RpcResponse deserialize(
-        const std::string& data)
+    [[nodiscard]] static std::optional<RpcResponse> deserialize(std::string_view data)
     {
-        RpcResponse response;
+        const auto idAndRemaining = rpc::detail::splitField(data);
+        if (!idAndRemaining)
+        {
+            return std::nullopt;
+        }
 
-        std::stringstream stream(data);
+        const auto successAndPayload = rpc::detail::splitField(idAndRemaining->second);
+        const auto requestId = rpc::detail::parseInt(idAndRemaining->first);
+        if (!successAndPayload || !requestId ||
+            (successAndPayload->first != "0" && successAndPayload->first != "1"))
+        {
+            return std::nullopt;
+        }
 
-        std::string requestIdStr;
-        std::string successStr;
-
-        std::getline(
-            stream,
-            requestIdStr,
-            '|');
-
-        response.requestId =
-            std::stoi(requestIdStr);
-
-        std::getline(
-            stream,
-            successStr,
-            '|');
-
-        response.success =
-            std::stoi(successStr);
-
-        std::getline(
-            stream,
-            response.payload);
-
-        return response;
+        return RpcResponse{*requestId, successAndPayload->first == "1",
+                           std::string(successAndPayload->second)};
     }
 };

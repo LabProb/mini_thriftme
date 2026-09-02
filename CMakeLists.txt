@@ -65,15 +65,6 @@ add_custom_target(generate_thrift
 )
 
 # =========================
-# Includes
-# =========================
-
-include_directories(
-    ${CMAKE_SOURCE_DIR}/src
-    ${GENERATED_DIR}
-)
-
-# =========================
 # Common sources
 # =========================
 
@@ -83,6 +74,10 @@ set(COMMON_SOURCES
     src/transport/TcpServer.cpp
     src/transport/TcpClient.cpp
 )
+
+add_library(mini_thriftme_core STATIC ${COMMON_SOURCES})
+target_include_directories(mini_thriftme_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(mini_thriftme_core PUBLIC Threads::Threads)
 
 set(THRIFT_GENERATED_SOURCES
     ${GENERATED_DIR}/VehicleService.cpp
@@ -96,24 +91,21 @@ if(BUILD_SERVER)
 
     add_executable(mini_thriftme_server
         src/server/main.cpp
-        ${COMMON_SOURCES}
-        ${THRIFT_GENERATED_SOURCES}
-    )
-
-    add_dependencies(
-        mini_thriftme_server
-        generate_thrift
     )
 
     target_link_libraries(
         mini_thriftme_server
-        thrift
-        Threads::Threads
+        mini_thriftme_core
     )
 
     add_executable(thrift_server
         src/server/thrift_server.cpp
         ${THRIFT_GENERATED_SOURCES}
+    )
+
+    target_include_directories(thrift_server PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${GENERATED_DIR}
     )
 
     add_dependencies(
@@ -136,24 +128,20 @@ if(BUILD_CLIENT)
 
     add_executable(mini_thriftme_client
         src/client/main.cpp
-        ${COMMON_SOURCES}
-        ${THRIFT_GENERATED_SOURCES}
-    )
-
-    add_dependencies(
-        mini_thriftme_client
-        generate_thrift
     )
 
     target_link_libraries(
         mini_thriftme_client
-        thrift
-        Threads::Threads
+        mini_thriftme_core
     )
 
     add_executable(thrift_client
         src/client/thrift_client.cpp
         ${THRIFT_GENERATED_SOURCES}
+    )
+
+    target_include_directories(thrift_client PRIVATE
+        ${GENERATED_DIR}
     )
 
     add_dependencies(
@@ -166,4 +154,11 @@ if(BUILD_CLIENT)
         Threads::Threads
     )
 
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(mini_thriftme_core_tests tests/core_tests.cpp)
+    target_link_libraries(mini_thriftme_core_tests PRIVATE mini_thriftme_core)
+    add_test(NAME mini_thriftme_core_tests COMMAND mini_thriftme_core_tests)
 endif()
