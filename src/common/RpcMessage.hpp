@@ -1,7 +1,10 @@
 #pragma once
 
-#include <sstream>
+#include "RpcWireFormat.hpp"
+
+#include <optional>
 #include <string>
+#include <string_view>
 
 struct RpcMessage
 {
@@ -11,46 +14,27 @@ struct RpcMessage
 
     std::string payload;
 
-    std::string serialize() const
+    [[nodiscard]] std::string serialize() const
     {
-        std::ostringstream stream;
-
-        stream
-            << requestId
-            << '|'
-            << method
-            << '|'
-            << payload;
-
-        return stream.str();
+        return std::to_string(requestId) + '|' + method + '|' + payload;
     }
 
-    static RpcMessage deserialize(
-        const std::string& data)
+    [[nodiscard]] static std::optional<RpcMessage> deserialize(std::string_view data)
     {
-        RpcMessage message;
+        const auto idAndRemaining = rpc::detail::splitField(data);
+        if (!idAndRemaining)
+        {
+            return std::nullopt;
+        }
 
-        std::stringstream stream(data);
+        const auto methodAndPayload = rpc::detail::splitField(idAndRemaining->second);
+        const auto requestId = rpc::detail::parseInt(idAndRemaining->first);
+        if (!methodAndPayload || !requestId || methodAndPayload->first.empty())
+        {
+            return std::nullopt;
+        }
 
-        std::string requestIdStr;
-
-        std::getline(
-            stream,
-            requestIdStr,
-            '|');
-
-        message.requestId =
-            std::stoi(requestIdStr);
-
-        std::getline(
-            stream,
-            message.method,
-            '|');
-
-        std::getline(
-            stream,
-            message.payload);
-
-        return message;
+        return RpcMessage{*requestId, std::string(methodAndPayload->first),
+                          std::string(methodAndPayload->second)};
     }
 };
